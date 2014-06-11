@@ -2,15 +2,17 @@
 
   <arg name="output" default="screen"/>
   <arg name="odometry_topic" default="base_odometry/odom"/>
-  <arg name="mocap_topic" default="vicon/ArchieBase/base"/>
-  <arg name="odom_2d_topic" default="odom"/>
-  <arg name="odom_3d_topic" default="vo"/>
+  <arg name="mocap_topic" default="vicon/ArchieBase/ArchieBase"/>
+  <arg name="odom_2d_topic" default="robot_odometry"/>
+  <arg name="odom_3d_topic" default="mocap_odometry"/>
+  <arg name="workaround_topic" default="workaround_odometry"/>
 
   <node pkg="mocap_robot_pose" type="mocap_robot_pose_node" name="mocap_robot_pose_node" output="$(arg output)">
     <param name="odometry_topic" type="string" value="$(arg odometry_topic)" />
     <param name="mocap_topic" type="string" value="$(arg mocap_topic)" />
     <param name="odom_2d_topic" type="string" value="$(arg odom_2d_topic)" />
     <param name="odom_3d_topic" type="string" value="$(arg odom_3d_topic)" />
+    <param name="workaround_topic" type="string" value="$(arg workaround_topic)" />
   </node>
 
 </launch>

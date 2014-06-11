@@ -9,6 +9,7 @@
 #include <nav_msgs/Odometry.h>
 #include <atomic>
 #include <Eigen/Geometry>
+#include <tf/transform_broadcaster.h>
 
 class MocapRobotPoseMonitor
 {
@@ -19,17 +20,36 @@ protected:
     ros::Subscriber mocap_pose_sub_;
     ros::Publisher odom_2d_pub_;
     ros::Publisher odom_3d_pub_;
+    ros::Publisher workaround_pub_;
+    tf::TransformBroadcaster tf_;
     bool offset_computed_;
     bool odom_received_;
+    bool workaround_;
+    std::vector<nav_msgs::Odometry> workaround_odom_queue_;
+    std::vector<nav_msgs::Odometry> workaround_mocap_queue_;
     Eigen::Affine3d last_odom_pose_;
     Eigen::Affine3d pose_offset_;
+    std::string world_frame_name_;
+    std::string robot_frame_name_;
 
 public:
 
-    MocapRobotPoseMonitor(ros::NodeHandle& nh, std::string& robot_odometry_in_topic, std::string& mocap_pose_in_topic, std::string& odom_2d_out_topic, std::string& odom_3d_out_topic) : nh_(nh)
+    MocapRobotPoseMonitor(ros::NodeHandle& nh, std::string& robot_odometry_in_topic, std::string& mocap_pose_in_topic, std::string& odom_2d_out_topic, std::string& odom_3d_out_topic, std::string& workaround_topic, std::string& world_frame_name, std::string& robot_frame_name) : nh_(nh)
     {
+        if (workaround_topic != "")
+        {
+            ROS_WARN("Workaround mode enabled");
+            workaround_ = true;
+            workaround_pub_ = nh_.advertise<nav_msgs::Odometry>(workaround_topic, 1, true);
+        }
+        else
+        {
+            workaround_ = false;
+        }
         offset_computed_ = false;
         odom_received_ = false;
+        world_frame_name_ = world_frame_name;
+        robot_frame_name_ = robot_frame_name;
         robot_odom_sub_ = nh_.subscribe(robot_odometry_in_topic, 1, &MocapRobotPoseMonitor::RobotOdometryCB, this);
         mocap_pose_sub_ = nh_.subscribe(mocap_pose_in_topic, 1, &MocapRobotPoseMonitor::MocapPoseCB, this);
         odom_2d_pub_ = nh_.advertise<nav_msgs::Odometry>(odom_2d_out_topic, 1, true);
@@ -40,8 +60,27 @@ public:
 
     void Loop()
     {
+        ros::Rate workaound_rate(100.0);
         while (ros::ok())
         {
+            if (workaround_)
+            {
+                if (workaround_mocap_queue_.size() > 0)
+                {
+                    nav_msgs::Odometry latest = workaround_mocap_queue_.back();
+                    workaround_mocap_queue_.clear();
+                    workaround_odom_queue_.clear();
+                    workaround_pub_.publish(latest);
+                }
+                else if (workaround_odom_queue_.size() > 0)
+                {
+                    ROS_WARN("No mocap data");
+                    nav_msgs::Odometry latest = workaround_odom_queue_.back();
+                    workaround_odom_queue_.clear();
+                    workaround_pub_.publish(latest);
+                }
+                workaound_rate.sleep();
+            }
             ros::spinOnce();
         }
     }
@@ -78,14 +117,28 @@ public:
             /* Set the covariance matrix */
             robot_odom.pose.covariance = robot_odom_msg.pose.covariance;
             /* Publish */
-            odom_2d_pub_.publish(robot_odom);
+            if (workaround_)
+            {
+                workaround_odom_queue_.push_back(robot_odom);
+            }
+            else
+            {
+                odom_2d_pub_.publish(robot_odom);
+            }
         }
         /* If we don't have a stored odometry->mocap pose offset, we
            just publish the received odometry pose with a warning. */
         else
         {
             ROS_WARN("Publishing received odometry pose with no offset, since offset has not been computed yet");
-            odom_2d_pub_.publish(robot_odom_msg);
+            if (workaround_)
+            {
+                workaround_odom_queue_.push_back(robot_odom_msg);
+            }
+            else
+            {
+                odom_2d_pub_.publish(robot_odom_msg);
+            }
         }
     }
 
@@ -111,6 +164,13 @@ public:
         {
             ROS_WARN("Mocap data received before odometry data, offset will be computed when odometry data is available");
         }
+        /* Convert to a TF transform and publish */
+        tf::Transform mocap_tf;
+        mocap_tf.setOrigin(tf::Vector3(mocap_pose_msg.transform.translation.x, mocap_pose_msg.transform.translation.y, mocap_pose_msg.transform.translation.z));
+        mocap_tf.setRotation(tf::Quaternion(mocap_pose_msg.transform.rotation.x, mocap_pose_msg.transform.rotation.y, mocap_pose_msg.transform.rotation.z, mocap_pose_msg.transform.rotation.w));
+        /* Publish TF */
+        tf::StampedTransform mocap_tf_msg(mocap_tf, mocap_pose_msg.header.stamp, world_frame_name_, robot_frame_name_);
+        tf_.sendTransform(mocap_tf_msg);
         /* Convert the mocap pose into a nav_msgs::Odometry message. */
         nav_msgs::Odometry mocap_odom;
         mocap_odom.header.frame_id = std::string("");
@@ -124,50 +184,105 @@ public:
         mocap_odom.pose.pose.orientation.z = mocap_pose_msg.transform.rotation.z;
         mocap_odom.pose.pose.orientation.w = mocap_pose_msg.transform.rotation.w;
         /* Set the covariance matrix */
-        /* Row 1 */
-        mocap_odom.pose.covariance[0] = 1e-12;
-        mocap_odom.pose.covariance[1] = 0.0;
-        mocap_odom.pose.covariance[2] = 0.0;
-        mocap_odom.pose.covariance[3] = 0.0;
-        mocap_odom.pose.covariance[4] = 0.0;
-        mocap_odom.pose.covariance[5] = 0.0;
-        /* Row 2 */
-        mocap_odom.pose.covariance[6] = 0.0;
-        mocap_odom.pose.covariance[7] = 1e-12;
-        mocap_odom.pose.covariance[8] = 0.0;
-        mocap_odom.pose.covariance[9] = 0.0;
-        mocap_odom.pose.covariance[10] = 0.0;
-        mocap_odom.pose.covariance[11] = 0.0;
-        /* Row 3 */
-        mocap_odom.pose.covariance[12] = 0.0;
-        mocap_odom.pose.covariance[13] = 0.0;
-        mocap_odom.pose.covariance[14] = 1e-12;
-        mocap_odom.pose.covariance[15] = 0.0;
-        mocap_odom.pose.covariance[16] = 0.0;
-        mocap_odom.pose.covariance[17] = 0.0;
-        /* Row 4 */
-        mocap_odom.pose.covariance[18] = 0.0;
-        mocap_odom.pose.covariance[19] = 0.0;
-        mocap_odom.pose.covariance[20] = 0.0;
-        mocap_odom.pose.covariance[21] = 1e-12;
-        mocap_odom.pose.covariance[22] = 0.0;
-        mocap_odom.pose.covariance[23] = 0.0;
-        /* Row 5 */
-        mocap_odom.pose.covariance[24] = 0.0;
-        mocap_odom.pose.covariance[25] = 0.0;
-        mocap_odom.pose.covariance[26] = 0.0;
-        mocap_odom.pose.covariance[27] = 0.0;
-        mocap_odom.pose.covariance[28] = 1e-12;
-        mocap_odom.pose.covariance[29] = 0.0;
-        /* Row 6 */
-        mocap_odom.pose.covariance[30] = 0.0;
-        mocap_odom.pose.covariance[31] = 0.0;
-        mocap_odom.pose.covariance[32] = 0.0;
-        mocap_odom.pose.covariance[33] = 0.0;
-        mocap_odom.pose.covariance[34] = 0.0;
-        mocap_odom.pose.covariance[35] = 1e-12;
+        if (workaround_)
+        {
+            /* Row 1 */
+            mocap_odom.pose.covariance[0] = 1e-12;
+            mocap_odom.pose.covariance[1] = 1e-12;
+            mocap_odom.pose.covariance[2] = 0.0;
+            mocap_odom.pose.covariance[3] = 0.0;
+            mocap_odom.pose.covariance[4] = 0.0;
+            mocap_odom.pose.covariance[5] = 1e-12;
+            /* Row 2 */
+            mocap_odom.pose.covariance[6] = 1e-12;
+            mocap_odom.pose.covariance[7] = 1e-12;
+            mocap_odom.pose.covariance[8] = 0.0;
+            mocap_odom.pose.covariance[9] = 0.0;
+            mocap_odom.pose.covariance[10] = 0.0;
+            mocap_odom.pose.covariance[11] = 1e-12;
+            /* Row 3 */
+            mocap_odom.pose.covariance[12] = 0.0;
+            mocap_odom.pose.covariance[13] = 0.0;
+            mocap_odom.pose.covariance[14] = 1.7976931348623157e+308;
+            mocap_odom.pose.covariance[15] = 0.0;
+            mocap_odom.pose.covariance[16] = 0.0;
+            mocap_odom.pose.covariance[17] = 0.0;
+            /* Row 4 */
+            mocap_odom.pose.covariance[18] = 0.0;
+            mocap_odom.pose.covariance[19] = 0.0;
+            mocap_odom.pose.covariance[20] = 0.0;
+            mocap_odom.pose.covariance[21] = 1.7976931348623157e+308;
+            mocap_odom.pose.covariance[22] = 0.0;
+            mocap_odom.pose.covariance[23] = 0.0;
+            /* Row 5 */
+            mocap_odom.pose.covariance[24] = 0.0;
+            mocap_odom.pose.covariance[25] = 0.0;
+            mocap_odom.pose.covariance[26] = 0.0;
+            mocap_odom.pose.covariance[27] = 0.0;
+            mocap_odom.pose.covariance[28] = 1.7976931348623157e+308;
+            mocap_odom.pose.covariance[29] = 0.0;
+            /* Row 6 */
+            mocap_odom.pose.covariance[30] = 1e-12;
+            mocap_odom.pose.covariance[31] = 1e-12;
+            mocap_odom.pose.covariance[32] = 0.0;
+            mocap_odom.pose.covariance[33] = 0.0;
+            mocap_odom.pose.covariance[34] = 0.0;
+            mocap_odom.pose.covariance[35] = 1e-12;
+        }
+        else
+        {
+            /* Row 1 */
+            mocap_odom.pose.covariance[0] = 1e-12;
+            mocap_odom.pose.covariance[1] = 1e-12;
+            mocap_odom.pose.covariance[2] = 1e-12;
+            mocap_odom.pose.covariance[3] = 0.0;
+            mocap_odom.pose.covariance[4] = 0.0;
+            mocap_odom.pose.covariance[5] = 0.0;
+            /* Row 2 */
+            mocap_odom.pose.covariance[6] = 1e-12;
+            mocap_odom.pose.covariance[7] = 1e-12;
+            mocap_odom.pose.covariance[8] = 1e-12;
+            mocap_odom.pose.covariance[9] = 0.0;
+            mocap_odom.pose.covariance[10] = 0.0;
+            mocap_odom.pose.covariance[11] = 0.0;
+            /* Row 3 */
+            mocap_odom.pose.covariance[12] = 1e-12;
+            mocap_odom.pose.covariance[13] = 1e-12;
+            mocap_odom.pose.covariance[14] = 1e-12;
+            mocap_odom.pose.covariance[15] = 0.0;
+            mocap_odom.pose.covariance[16] = 0.0;
+            mocap_odom.pose.covariance[17] = 0.0;
+            /* Row 4 */
+            mocap_odom.pose.covariance[18] = 0.0;
+            mocap_odom.pose.covariance[19] = 0.0;
+            mocap_odom.pose.covariance[20] = 0.0;
+            mocap_odom.pose.covariance[21] = 1e-12;
+            mocap_odom.pose.covariance[22] = 1e-12;
+            mocap_odom.pose.covariance[23] = 1e-12;
+            /* Row 5 */
+            mocap_odom.pose.covariance[24] = 0.0;
+            mocap_odom.pose.covariance[25] = 0.0;
+            mocap_odom.pose.covariance[26] = 0.0;
+            mocap_odom.pose.covariance[27] = 1e-12;
+            mocap_odom.pose.covariance[28] = 1e-12;
+            mocap_odom.pose.covariance[29] = 1e-12;
+            /* Row 6 */
+            mocap_odom.pose.covariance[30] = 0.0;
+            mocap_odom.pose.covariance[31] = 0.0;
+            mocap_odom.pose.covariance[32] = 0.0;
+            mocap_odom.pose.covariance[33] = 1e-12;
+            mocap_odom.pose.covariance[34] = 1e-12;
+            mocap_odom.pose.covariance[35] = 1e-12;
+        }
         /* Publish */
-        odom_3d_pub_.publish(mocap_odom);
+        if (workaround_)
+        {
+            workaround_mocap_queue_.push_back(mocap_odom);
+        }
+        else
+        {
+            odom_3d_pub_.publish(mocap_odom);
+        }
     }
 };
 
@@ -176,16 +291,22 @@ int main(int argc, char** argv)
     ros::init(argc, argv, "mocap_robot_pose_node");
     ROS_INFO("Starting mocap robot pose monitor...");
     ros::NodeHandle nh;
-    ros::NodeHandle nhp("`");
+    ros::NodeHandle nhp("~");
     std::string robot_odometry_in_topic;
     std::string mocap_pose_in_topic;
     std::string odom_2d_out_topic;
     std::string odom_3d_out_topic;
+    std::string workaround_topic;
+    std::string world_frame_name;
+    std::string robot_frame_name;
     nhp.param(std::string("odometry_topic"), robot_odometry_in_topic, std::string("odometry"));
     nhp.param(std::string("mocap_topic"), mocap_pose_in_topic, std::string("mocap"));
     nhp.param(std::string("odom_2d_topic"), odom_2d_out_topic, std::string("odom_2d"));
     nhp.param(std::string("odom_3d_topic"), odom_3d_out_topic, std::string("odom_3d"));
-    MocapRobotPoseMonitor monitor(nh, robot_odometry_in_topic, mocap_pose_in_topic, odom_2d_out_topic, odom_3d_out_topic);
+    nhp.param(std::string("workaround_topic"), workaround_topic, std::string(""));
+    nhp.param(std::string("world_frame_name"), world_frame_name, std::string("world"));
+    nhp.param(std::string("robot_frame_name"), robot_frame_name, std::string("base_footprint"));
+    MocapRobotPoseMonitor monitor(nh, robot_odometry_in_topic, mocap_pose_in_topic, odom_2d_out_topic, odom_3d_out_topic, workaround_topic, world_frame_name, robot_frame_name);
     ROS_INFO("...startup complete");
     monitor.Loop();
     return 0;
