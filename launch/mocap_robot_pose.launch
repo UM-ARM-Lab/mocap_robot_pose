@@ -7,6 +7,10 @@
   <arg name="odom_3d_topic" default="mocap_odometry"/>
   <arg name="workaround_topic" default="workaround_odometry"/>
 
+  <node pkg="tf" type="static_transform_publisher" name="odom_to_mocap_link"
+      args="0 0 0 0 0 0 /world /odom_combined 100" >
+  </node>
+
   <node pkg="mocap_robot_pose" type="mocap_robot_pose_node" name="mocap_robot_pose_node" output="$(arg output)">
     <param name="odometry_topic" type="string" value="$(arg odometry_topic)" />
     <param name="mocap_topic" type="string" value="$(arg mocap_topic)" />

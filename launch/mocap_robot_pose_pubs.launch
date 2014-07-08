@@ -1,0 +1,36 @@
+<launch>
+
+  <arg name="output" default="screen"/>
+  <arg name="mocap_topic" default="/mocap_tracking"/>
+  <arg name="mocap_frame_name" default="/mocap_world"/>
+  <arg name="left_arm_pose_topic" default="/l_arm_pose_controller/pose" />
+  <arg name="right_arm_pose_topic" default="/r_arm_pose_controller/pose" />
+
+  <!-- Kill the /robot_pose_ekf node running on the robot -->
+  <node pkg="mocap_robot_pose" type="kill_pr2_ekf.sh" name="kill_pr2_ekf" />
+
+  <node pkg="tf" type="static_transform_publisher" name="odom_to_mocap_link"
+      args="0 0 0 0 0 0 $(arg mocap_frame_name) /odom_combined 100" >
+  </node>
+
+  <node pkg="mocap_robot_pose" type="mocap_robot_base_pub" name="mocap_robot_base_pub" output="$(arg output)">
+    <param name="mocap_topic" type="string" value="$(arg mocap_topic)" />
+    <param name="robot_object_name" type="string" value="ArchieBase" />
+    <param name="robot_segment_name" type="string" value="ArchieBase" />
+  </node>
+
+  <node pkg="tf" type="static_transform_publisher" name="mocap_left_forearm_pub"
+      args="-0.235 0 0.02 0 0 0 /mocap/ArchieLeftForearm/ArchieLeftForearm /mocap_left_forearm 100" >
+  </node>
+
+  <node pkg="tf" type="static_transform_publisher" name="mocap_right_forearm_pub"
+      args="-0.230 0 0.02 0 0 0 /mocap/ArchieRightForearm/ArchieRightForearm /mocap_right_forearm 100" >
+  </node>
+
+  <node pkg="mocap_robot_pose" type="mocap_robot_arm_pub" name="mocap_robot_arm_pub" output="$(arg output)">
+    <param name="mocap_topic" type="string" value="$(arg mocap_topic)" />
+    <param name="left_arm_pose_topic" type="string" value="$(arg left_arm_pose_topic)" />
+    <param name="right_arm_pose_topic" type="string" value="$(arg right_arm_pose_topic)" />
+  </node>
+
+</launch>

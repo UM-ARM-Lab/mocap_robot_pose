@@ -15,6 +15,9 @@ class MocapRobotPoseMonitor
 {
 protected:
 
+    enum WORKAROUND_OPERATING_MODE {ODOM_ONLY, MOCAP_ONLY};
+    WORKAROUND_OPERATING_MODE workaround_mode_;
+
     ros::NodeHandle nh_;
     ros::Subscriber robot_odom_sub_;
     ros::Subscriber mocap_pose_sub_;
@@ -25,6 +28,7 @@ protected:
     bool offset_computed_;
     bool odom_received_;
     bool workaround_;
+    bool override_tf_;
     std::vector<nav_msgs::Odometry> workaround_odom_queue_;
     std::vector<nav_msgs::Odometry> workaround_mocap_queue_;
     Eigen::Affine3d last_odom_pose_;
@@ -32,19 +36,35 @@ protected:
     std::string world_frame_name_;
     std::string robot_frame_name_;
 
+    ros::Timer mocap_data_watchdog_;
+    double watchdog_timeout_;
+
 public:
 
-    MocapRobotPoseMonitor(ros::NodeHandle& nh, std::string& robot_odometry_in_topic, std::string& mocap_pose_in_topic, std::string& odom_2d_out_topic, std::string& odom_3d_out_topic, std::string& workaround_topic, std::string& world_frame_name, std::string& robot_frame_name) : nh_(nh)
+    MocapRobotPoseMonitor(ros::NodeHandle& nh, std::string& robot_odometry_in_topic, std::string& mocap_pose_in_topic, std::string& odom_2d_out_topic, std::string& odom_3d_out_topic, std::string& workaround_topic, std::string& world_frame_name, std::string& robot_frame_name, double watchdog_timeout=0.1, bool override_tf=false) : nh_(nh)
     {
+        watchdog_timeout_ = watchdog_timeout;
         if (workaround_topic != "")
         {
             ROS_WARN("Workaround mode enabled");
             workaround_ = true;
             workaround_pub_ = nh_.advertise<nav_msgs::Odometry>(workaround_topic, 1, true);
+            workaround_mode_ = MOCAP_ONLY;
+            mocap_data_watchdog_ = nh_.createTimer(ros::Duration(watchdog_timeout_), &MocapRobotPoseMonitor::MocapDataWatchdogCB, this, true);
         }
         else
         {
             workaround_ = false;
+            workaround_mode_ = ODOM_ONLY;
+        }
+        if (override_tf)
+        {
+            ROS_WARN("Publishing override TF");
+            override_tf_ = true;
+        }
+        else
+        {
+            override_tf_ = false;
         }
         offset_computed_ = false;
         odom_received_ = false;
@@ -65,19 +85,25 @@ public:
         {
             if (workaround_)
             {
-                if (workaround_mocap_queue_.size() > 0)
+                if (workaround_mode_ == MOCAP_ONLY)
                 {
-                    nav_msgs::Odometry latest = workaround_mocap_queue_.back();
-                    workaround_mocap_queue_.clear();
-                    workaround_odom_queue_.clear();
-                    workaround_pub_.publish(latest);
+                    if (workaround_mocap_queue_.size() > 0)
+                    {
+                        nav_msgs::Odometry latest = workaround_mocap_queue_.back();
+                        workaround_mocap_queue_.clear();
+                        workaround_odom_queue_.clear();
+                        workaround_pub_.publish(latest);
+                    }
                 }
-                else if (workaround_odom_queue_.size() > 0)
+                else if (workaround_mode_ == ODOM_ONLY)
                 {
-                    ROS_WARN("No mocap data");
-                    nav_msgs::Odometry latest = workaround_odom_queue_.back();
-                    workaround_odom_queue_.clear();
-                    workaround_pub_.publish(latest);
+                    if (workaround_odom_queue_.size() > 0)
+                    {
+                        nav_msgs::Odometry latest = workaround_odom_queue_.back();
+                        workaround_odom_queue_.clear();
+                        workaround_mocap_queue_.clear();
+                        workaround_pub_.publish(latest);
+                    }
                 }
                 workaound_rate.sleep();
             }
@@ -164,13 +190,16 @@ public:
         {
             ROS_WARN("Mocap data received before odometry data, offset will be computed when odometry data is available");
         }
-        /* Convert to a TF transform and publish */
-        tf::Transform mocap_tf;
-        mocap_tf.setOrigin(tf::Vector3(mocap_pose_msg.transform.translation.x, mocap_pose_msg.transform.translation.y, mocap_pose_msg.transform.translation.z));
-        mocap_tf.setRotation(tf::Quaternion(mocap_pose_msg.transform.rotation.x, mocap_pose_msg.transform.rotation.y, mocap_pose_msg.transform.rotation.z, mocap_pose_msg.transform.rotation.w));
-        /* Publish TF */
-        tf::StampedTransform mocap_tf_msg(mocap_tf, mocap_pose_msg.header.stamp, world_frame_name_, robot_frame_name_);
-        tf_.sendTransform(mocap_tf_msg);
+        if (override_tf_)
+        {
+            /* Convert to a TF transform and publish */
+            tf::Transform mocap_tf;
+            mocap_tf.setOrigin(tf::Vector3(mocap_pose_msg.transform.translation.x, mocap_pose_msg.transform.translation.y, mocap_pose_msg.transform.translation.z));
+            mocap_tf.setRotation(tf::Quaternion(mocap_pose_msg.transform.rotation.x, mocap_pose_msg.transform.rotation.y, mocap_pose_msg.transform.rotation.z, mocap_pose_msg.transform.rotation.w));
+            /* Publish TF */
+            tf::StampedTransform mocap_tf_msg(mocap_tf, mocap_pose_msg.header.stamp, world_frame_name_, robot_frame_name_);
+            tf_.sendTransform(mocap_tf_msg);
+        }
         /* Convert the mocap pose into a nav_msgs::Odometry message. */
         nav_msgs::Odometry mocap_odom;
         mocap_odom.header.frame_id = std::string("");
@@ -283,6 +312,18 @@ public:
         {
             odom_3d_pub_.publish(mocap_odom);
         }
+        // Reset watchdog
+        if (workaround_)
+        {
+            workaround_mode_ = MOCAP_ONLY;
+            mocap_data_watchdog_ = nh_.createTimer(ros::Duration(watchdog_timeout_), &MocapRobotPoseMonitor::MocapDataWatchdogCB, this, true);
+        }
+    }
+
+    void MocapDataWatchdogCB(const ros::TimerEvent& e)
+    {
+        ROS_WARN("No mocap data received for %f seconds, switching back to publishing data from odometry", watchdog_timeout_);
+        workaround_mode_ = ODOM_ONLY;
     }
 };
 

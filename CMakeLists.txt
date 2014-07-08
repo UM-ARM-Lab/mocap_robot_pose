@@ -4,7 +4,7 @@ project(mocap_robot_pose)
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
-find_package(catkin REQUIRED COMPONENTS roscpp std_msgs sensor_msgs geometry_msgs nav_msgs tf)
+find_package(catkin REQUIRED COMPONENTS roscpp std_msgs sensor_msgs geometry_msgs nav_msgs tf lightweight_vicon_bridge)
 find_package(Eigen REQUIRED)
 
 ## System dependencies are found with CMake's conventions
@@ -25,7 +25,7 @@ find_package(Eigen REQUIRED)
 ## LIBRARIES: libraries you create in this project that dependent projects also need
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
-catkin_package(CATKIN_DEPENDS roscpp std_msgs sensor_msgs geometry_msgs nav_msgs tf DEPENDS system_lib Eigen)
+catkin_package(CATKIN_DEPENDS roscpp std_msgs sensor_msgs geometry_msgs nav_msgs tf lightweight_vicon_bridge DEPENDS system_lib Eigen)
 
 ###########
 ## Build ##
@@ -49,6 +49,16 @@ set(CMAKE_CXX_FLAGS "-std=c++0x ${CMAKE_CXX_FLAGS} -O3")
 add_executable(mocap_robot_pose_node src/mocap_robot_pose_node.cpp)
 add_dependencies(mocap_robot_pose_node ${catkin_EXPORTED_TARGETS})
 target_link_libraries(mocap_robot_pose_node ${catkin_LIBRARIES})
+
+## Simple mocap to odom_combined publisher
+add_executable(mocap_robot_base_pub src/mocap_robot_base_pub.cpp)
+add_dependencies(mocap_robot_base_pub ${catkin_EXPORTED_TARGETS})
+target_link_libraries(mocap_robot_base_pub ${catkin_LIBRARIES})
+
+## Simple mocap to arm pose publisher
+add_executable(mocap_robot_arm_pub src/mocap_robot_arm_pub.cpp)
+add_dependencies(mocap_robot_arm_pub ${catkin_EXPORTED_TARGETS})
+target_link_libraries(mocap_robot_arm_pub ${catkin_LIBRARIES})
 
 #############
 ## Install ##
