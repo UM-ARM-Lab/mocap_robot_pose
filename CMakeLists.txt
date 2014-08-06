@@ -5,6 +5,7 @@ project(mocap_robot_pose)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS roscpp std_msgs sensor_msgs geometry_msgs nav_msgs tf lightweight_vicon_bridge)
+find_package(cmake_modules REQUIRED)
 find_package(Eigen REQUIRED)
 
 ## System dependencies are found with CMake's conventions
