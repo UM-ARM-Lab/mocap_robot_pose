@@ -35,7 +35,7 @@ catkin_package(CATKIN_DEPENDS roscpp std_msgs sensor_msgs geometry_msgs nav_msgs
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 # include_directories(include)
-include_directories(${catkin_INCLUDE_DIRS} ${Eigen_INCLUDE_DIRS})
+include_directories(${catkin_INCLUDE_DIRS} SYSTEM ${Eigen_INCLUDE_DIRS})
 
 ## Set build flags for working with OpenMP
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3")

@@ -76,8 +76,6 @@ public:
         odom_3d_pub_ = nh_.advertise<nav_msgs::Odometry>(odom_3d_out_topic, 1, true);
     }
 
-    ~MocapRobotPoseMonitor() {}
-
     void Loop()
     {
         ros::Rate workaound_rate(100.0);
