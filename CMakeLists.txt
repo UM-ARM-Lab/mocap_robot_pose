@@ -6,7 +6,8 @@ project(mocap_robot_pose)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS roscpp std_msgs sensor_msgs geometry_msgs nav_msgs tf lightweight_vicon_bridge)
 find_package(cmake_modules REQUIRED)
-find_package(Eigen REQUIRED)
+find_package(Eigen3 REQUIRED)
+set(Eigen3_INCLUDE_DIRS ${EIGEN3_INCLUDE_DIR})
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -26,7 +27,7 @@ find_package(Eigen REQUIRED)
 ## LIBRARIES: libraries you create in this project that dependent projects also need
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
-catkin_package(CATKIN_DEPENDS roscpp std_msgs sensor_msgs geometry_msgs nav_msgs tf lightweight_vicon_bridge DEPENDS system_lib Eigen)
+catkin_package(CATKIN_DEPENDS roscpp std_msgs sensor_msgs geometry_msgs nav_msgs tf lightweight_vicon_bridge DEPENDS Eigen3)
 
 ###########
 ## Build ##
@@ -35,7 +36,7 @@ catkin_package(CATKIN_DEPENDS roscpp std_msgs sensor_msgs geometry_msgs nav_msgs
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 # include_directories(include)
-include_directories(${catkin_INCLUDE_DIRS} SYSTEM ${Eigen_INCLUDE_DIRS})
+include_directories(${catkin_INCLUDE_DIRS} SYSTEM ${EIGEN3_INCLUDE_DIR})
 
 ## Set build flags for working with OpenMP
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3")
