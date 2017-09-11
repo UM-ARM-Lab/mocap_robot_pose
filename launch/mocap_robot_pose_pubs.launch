@@ -9,8 +9,8 @@
   <!-- Kill the /robot_pose_ekf node running on the robot -->
   <node pkg="mocap_robot_pose" type="kill_pr2_ekf.sh" name="kill_pr2_ekf" />
 
-  <node pkg="tf" type="static_transform_publisher" name="odom_to_mocap_link"
-      args="0 0 0 0 0 0 $(arg mocap_frame_name) /odom_combined 100" >
+  <node pkg="tf2_ros" type="static_transform_publisher" name="odom_to_mocap_link"
+      args="0 0 0 0 0 0 $(arg mocap_frame_name) /odom_combined" >
   </node>
 
   <node pkg="mocap_robot_pose" type="mocap_robot_base_pub" name="mocap_robot_base_pub" output="$(arg output)">
@@ -19,12 +19,12 @@
     <param name="robot_segment_name" type="string" value="ArchieBase" />
   </node>
 
-  <node pkg="tf" type="static_transform_publisher" name="mocap_left_forearm_pub"
-      args="-0.235 0 0.02 0 0 0 /mocap/ArchieLeftForearm/ArchieLeftForearm /mocap_left_forearm 100" >
+  <node pkg="tf2_ros" type="static_transform_publisher" name="mocap_left_forearm_pub"
+      args="-0.235 0 0.02 0 0 0 /mocap/ArchieLeftForearm/ArchieLeftForearm /mocap_left_forearm" >
   </node>
 
-  <node pkg="tf" type="static_transform_publisher" name="mocap_right_forearm_pub"
-      args="-0.230 0 0.02 0 0 0 /mocap/ArchieRightForearm/ArchieRightForearm /mocap_right_forearm 100" >
+  <node pkg="tf2_ros" type="static_transform_publisher" name="mocap_right_forearm_pub"
+      args="-0.230 0 0.02 0 0 0 /mocap/ArchieRightForearm/ArchieRightForearm /mocap_right_forearm" >
   </node>
 
   <node pkg="mocap_robot_pose" type="mocap_robot_arm_pub" name="mocap_robot_arm_pub" output="$(arg output)">
